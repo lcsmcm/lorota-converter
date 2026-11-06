@@ -5,7 +5,7 @@
 <h1 align="center">Lorota Converter</h1>
 
 <p align="center">
-  App desktop para Windows que transforma links do YouTube, SoundCloud, Bandcamp e +1000 sites em <b>MP3</b>, <b>WAV</b> ou <b>vídeo</b>.
+  App desktop para Windows que transforma links do YouTube, Spotify, SoundCloud, Bandcamp e +1000 sites em <b>MP3</b>, <b>WAV</b> ou <b>vídeo</b>.
 </p>
 
 <p align="center">
@@ -18,6 +18,7 @@
 - **Áudio WAV 24-bit**: sem compressão e na taxa de amostragem original da fonte, sem reamostrar.
 - **Vídeo** em **MP4, MOV, MKV, WEBM ou AVI**, com resolução **Máx, 1080p, 720p ou 480p**.
   - Dá preferência a H.264 + AAC, que abrem em qualquer player. MP4, MOV e MKV saem sem recodificar, então não perdem qualidade.
+- **Links do Spotify**: o áudio do Spotify é protegido, então o app lê o nome, o artista, o álbum e a capa da página pública da música, acha a mesma faixa no YouTube e grava os dados e a capa do Spotify no MP3. Por enquanto funciona com links de música (`/track/`).
 - **Vários links de uma vez**: cole uma lista e o app converte tudo em paralelo.
 - **Fonte de maior qualidade**: sempre escolhe a faixa de áudio de maior bitrate disponível.
 - **Janela nativa**: não abre o navegador. Usa o WebView2 que já vem no Windows 10/11.

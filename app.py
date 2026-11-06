@@ -1,6 +1,9 @@
 """Lorota Converter — extrator de MP3/WAV pessoal, roda em http://127.0.0.1:5000"""
+import html
+import re
 import shutil
 import socket
+import urllib.request
 import subprocess
 import sys
 import threading
@@ -41,9 +44,84 @@ def update(job_id, **kw):
         jobs[job_id].update(kw)
 
 
+# ---------- Spotify ----------
+# O áudio do Spotify é protegido, então não dá pra baixar de lá. O Lorota lê o nome,
+# artista, álbum e capa da página pública da música, acha a mesma faixa no YouTube,
+# baixa de lá e grava as informações do Spotify no arquivo.
+SPOTIFY_TRACK = re.compile(r"https?://open\.spotify\.com/(?:intl-[a-z-]+/)?track/([A-Za-z0-9]+)")
+SPOTIFY_ANY = re.compile(r"https?://(?:open\.)?spotify\.com/|https?://spotify\.link/")
+# User-Agent simples: com um de navegador completo o Spotify devolve a página sem as tags com os dados
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+
+def _fetch(url: str) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "en"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return r.read()
+
+
+def spotify_meta(url: str) -> dict:
+    m = SPOTIFY_TRACK.search(url)
+    if not m:
+        raise RuntimeError("Do Spotify, por enquanto só funcionam links de música (open.spotify.com/track/...).")
+    page = _fetch(f"https://open.spotify.com/track/{m.group(1)}").decode("utf-8", "replace")
+
+    def meta(prop):
+        mm = re.search(r'<meta[^>]+(?:property|name)="%s"[^>]+content="([^"]*)"' % re.escape(prop), page)
+        return html.unescape(mm.group(1)).strip() if mm else ""
+
+    title = meta("og:title")
+    parts = [p.strip() for p in meta("og:description").split("·")]  # "Artista · Álbum · Song · Ano"
+    artist = meta("music:musician_description") or (parts[0] if parts else "")
+    album = parts[1] if len(parts) > 1 else ""
+    if not title or not artist:
+        raise RuntimeError("Não consegui ler os dados dessa música no Spotify.")
+    return {"title": title, "artist": artist, "album": album, "cover": meta("og:image")}
+
+
+def safe_name(s: str) -> str:
+    return re.sub(r'[\\/:*?"<>|]+', "", s).strip()[:150] or "musica"
+
+
+def retag_mp3(path: Path, sp: dict):
+    """Troca capa e informações do MP3 pelas do Spotify."""
+    cover = path.with_name("spotify-cover.jpg")
+    tmp = path.with_name("retag.mp3")
+    try:
+        cover.write_bytes(_fetch(sp["cover"])) if sp.get("cover") else None
+    except Exception:  # noqa: BLE001
+        pass
+    cmd = [FFMPEG or "ffmpeg", "-y", "-v", "error", "-i", str(path)]
+    if cover.exists():
+        cmd += ["-i", str(cover), "-map", "0:a", "-map", "1:v", "-c", "copy", "-disposition:v", "attached_pic",
+                "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)"]
+    else:
+        cmd += ["-map", "0", "-c", "copy"]
+    cmd += ["-map_metadata", "-1", "-id3v2_version", "3",
+            "-metadata", f"title={sp['title']}", "-metadata", f"artist={sp['artist']}",
+            "-metadata", f"album={sp['album']}", str(tmp)]
+    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    if subprocess.run(cmd, creationflags=flags).returncode == 0:
+        tmp.replace(path)
+    cover.unlink(missing_ok=True)
+
+
 def run_job(job_id: str, url: str, quality: str, fmt: str, res: str = "1080"):
     job_dir = DOWNLOADS / job_id
     job_dir.mkdir(exist_ok=True)
+
+    sp = None
+    if SPOTIFY_ANY.match(url):
+        try:
+            update(job_id, status="lendo o Spotify")
+            sp = spotify_meta(url)
+            update(job_id, title=f"{sp['artist']} - {sp['title']}", thumbnail=sp["cover"],
+                   status="procurando no YouTube")
+            kind = "official video" if fmt in VIDEO_FORMATS else "audio"
+            url = f"ytsearch1:{sp['artist']} - {sp['title']} {kind}"
+        except Exception as e:  # noqa: BLE001
+            update(job_id, status="erro", error=str(e))
+            return
 
     def hook(d):
         if d["status"] == "downloading":
@@ -56,7 +134,7 @@ def run_job(job_id: str, url: str, quality: str, fmt: str, res: str = "1080"):
     opts = {
         "format": "bestaudio/best",
         "format_sort": ["abr", "asr"],  # prioriza a faixa de áudio de maior bitrate
-        "outtmpl": str(job_dir / "%(title)s.%(ext)s"),
+        "outtmpl": str(job_dir / (safe_name(f"{sp['artist']} - {sp['title']}") + ".%(ext)s" if sp else "%(title)s.%(ext)s")),
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
@@ -106,17 +184,22 @@ def run_job(job_id: str, url: str, quality: str, fmt: str, res: str = "1080"):
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
+        if info.get("entries"):  # resultado de busca (Spotify)
+            info = info["entries"][0] or {}
         mp3s = list(job_dir.glob(f"*.{fmt}"))
         if not mp3s:
             raise RuntimeError(f"Nenhum {fmt.upper()} foi gerado.")
+        if sp and fmt == "mp3":
+            update(job_id, status="colocando capa do Spotify")
+            retag_mp3(mp3s[0], sp)
         update(
             job_id,
             status="pronto",
             progress=100,
             file=mp3s[0].name,
-            title=info.get("title") or mp3s[0].stem,
-            uploader=info.get("uploader") or info.get("extractor_key"),
-            thumbnail=info.get("thumbnail"),
+            title=sp["title"] if sp else (info.get("title") or mp3s[0].stem),
+            uploader=f"{sp['artist']} · via Spotify" if sp else (info.get("uploader") or info.get("extractor_key")),
+            thumbnail=sp["cover"] if sp else info.get("thumbnail"),
             size=mp3s[0].stat().st_size,
             format=fmt,
         )
