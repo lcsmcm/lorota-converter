@@ -1,0 +1,17 @@
+# ambiente Python
+.venv/
+__pycache__/
+*.pyc
+
+# arquivos baixados pelo app
+downloads/
+
+# saídas do build (.exe e zip)
+build/
+dist/
+release/
+*.spec
+*.zip
+
+# configurações locais
+.claude/
