@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/lcsmcm/lorota-converter/releases/latest"><b>⬇️ Baixar para Windows</b></a>
+</p>
+
+<p align="center">
   <img src="docs/screenshot.jpg" width="720" alt="Tela do Lorota Converter">
 </p>
 
