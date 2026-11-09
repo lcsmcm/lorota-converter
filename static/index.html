@@ -152,6 +152,61 @@
     box-shadow: 0 8px 24px -10px var(--lime); }
   a.dl:hover { transform: translateY(-2px) rotate(-2deg); }
 
+  /* ---------- barra "Baixar tudo" ---------- */
+  .toolbar { position: sticky; top: 10px; z-index: 5; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-top: 26px; padding: 10px 10px 10px 14px; border-radius: 18px; border: 1px solid var(--line);
+    background: rgba(22, 12, 34, .72); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    box-shadow: 0 18px 50px -24px rgba(0, 0, 0, .8); animation: fadeUp .4s both; }
+  .toolbar[hidden] { display: none; }
+  .toolbar .count { color: var(--muted); font-size: 13px; flex: 1; min-width: 140px; }
+  .toolbar .count b { color: var(--text); }
+  .tbtns { display: flex; gap: 8px; }
+  .ghost { font: inherit; font-weight: 600; font-size: 14px; color: var(--muted); background: transparent; border: 1px solid var(--line);
+    border-radius: 12px; padding: 9px 14px; cursor: pointer; transition: color .2s, border-color .2s; }
+  .ghost:hover { color: var(--err); border-color: var(--err); }
+  .ghost[hidden] { display: none; }
+  .dlall { font: inherit; font-weight: 800; font-size: 14px; color: #10200a; border: 0; border-radius: 12px; padding: 10px 18px; cursor: pointer;
+    background: linear-gradient(100deg, var(--lime), var(--cyan)); background-size: 200% 100%;
+    box-shadow: 0 10px 28px -12px var(--lime); transition: transform .15s, background-position .4s, opacity .2s; }
+  .dlall:hover:not(:disabled) { transform: translateY(-2px); background-position: 100% 0; }
+  .dlall:disabled { opacity: .35; cursor: default; box-shadow: none; }
+  .dlall.busy { pointer-events: none; animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .6; } }
+
+  ul.withbar { margin-top: 12px; }
+
+  /* caixinha de seleção */
+  .chk { position: relative; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; flex: none; color: var(--muted); font-size: 13px; font-weight: 600; user-select: none; }
+  .chk input { position: absolute; opacity: 0; pointer-events: none; }
+  .chk span { width: 22px; height: 22px; border-radius: 7px; border: 2px solid rgba(255, 255, 255, .25); display: grid; place-items: center;
+    transition: background .2s, border-color .2s, transform .2s cubic-bezier(.3, 1.8, .5, 1); }
+  .chk span::after { content: ""; width: 10px; height: 6px; border: solid #10200a; border-width: 0 0 2.5px 2.5px;
+    transform: rotate(-45deg) translate(1px, -1px) scale(0); transition: transform .2s cubic-bezier(.3, 1.8, .5, 1); }
+  .chk input:checked + span { background: var(--lime); border-color: var(--lime); transform: scale(1.08); }
+  .chk input:checked + span::after { transform: rotate(-45deg) translate(1px, -1px) scale(1); }
+  .chk input:indeterminate + span { background: var(--lime); border-color: var(--lime); }
+  .chk input:indeterminate + span::after { width: 10px; height: 0; border-width: 0 0 2.5px 0; transform: none; }
+  .chk input:disabled + span { opacity: .25; cursor: default; }
+  .chk input:focus-visible + span { outline: 2px solid var(--pink); outline-offset: 2px; }
+  li .chk { align-self: center; }
+  li.sel { border-color: rgba(184, 255, 92, .45); background: rgba(184, 255, 92, .05); }
+
+  .acts { display: flex; align-items: center; gap: 6px; flex: none; }
+  a.dl.small { padding: 8px 12px; font-size: 13px; background: rgba(255, 255, 255, .08); color: var(--text); box-shadow: none; animation: none; }
+  a.dl.small:hover { background: rgba(255, 255, 255, .16); }
+  .x { width: 32px; height: 32px; border-radius: 10px; border: 0; background: transparent; color: #7f739a; font-size: 18px; line-height: 1; cursor: pointer; transition: color .2s, background .2s; }
+  .x:hover { color: var(--err); background: rgba(255, 107, 122, .12); }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; color: var(--lime); margin-left: 6px; }
+  li.out { animation: out .3s ease-in forwards; }
+  @keyframes out { to { opacity: 0; transform: translateX(30px) scale(.96); } }
+
+  /* aviso flutuante */
+  .toast { position: fixed; left: 50%; bottom: 24px; z-index: 20; max-width: calc(100% - 32px); transform: translate(-50%, 30px); opacity: 0;
+    padding: 12px 18px; border-radius: 14px; background: #1d1130; border: 1px solid rgba(184, 255, 92, .4); color: var(--text); font-size: 14px;
+    box-shadow: 0 20px 50px -20px #000; transition: transform .35s cubic-bezier(.3, 1.5, .5, 1), opacity .25s; overflow-wrap: anywhere; }
+  .toast.show { transform: translate(-50%, 0); opacity: 1; }
+  .toast.err { border-color: var(--err); }
+
   .empty { text-align: center; color: #7f739a; margin-top: 34px; font-size: 14px; animation: fadeUp .8s 1.2s both; }
   footer { text-align: center; color: #6c6187; font-size: 12px; margin-top: 50px; }
 
@@ -160,6 +215,11 @@
     .urlrow { flex-direction: column; }
     .go { padding: 14px; }
     a.dl { padding: 8px 12px; }
+    .toolbar { top: 6px; }
+    .tbtns { width: 100%; }
+    .dlall { flex: 1; }
+    li { flex-wrap: wrap; }
+    .acts { margin-left: auto; }
   }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -213,10 +273,20 @@
         <button type="button" data-v="128">128 kbps</button>
       </div>
     </div>
-    <p class="hint">Dá pra colar <b>vários links de uma vez</b>. Os arquivos ficam salvos na pasta <a href="#" id="openDir" class="dir">📂 downloads</a>.</p>
+    <p class="hint">Vai colando links: cada um <b>já começa a converter</b> na hora. No fim, é só <b>Baixar tudo</b> ou escolher quais quer. Os convertidos ficam guardados na pasta <a href="#" id="openDir" class="dir">📂 downloads</a>.</p>
   </section>
 
+  <div class="toolbar" id="toolbar" hidden>
+    <label class="chk" title="Selecionar todos"><input type="checkbox" id="selAll"><span></span>Todos</label>
+    <span class="count" id="count"></span>
+    <div class="tbtns">
+      <button class="ghost" id="rmSel" hidden>Remover</button>
+      <button class="dlall" id="dlAll" disabled>Baixar tudo</button>
+    </div>
+  </div>
+
   <ul id="list"></ul>
+  <div class="toast" id="toast" role="status"></div>
   <p class="empty" id="empty">Nenhuma lorota convertida ainda 🎧</p>
   <footer>Lorota Corp</footer>
 </main>
@@ -291,30 +361,165 @@ function submit(text) {
   urlInput.value = '';
 }
 
-async function start(url) {
-  document.getElementById('empty').style.display = 'none';
-  const fmt = outFormat();
+// ---------- itens da lista ----------
+function createItem(title, fmt) {
   const li = document.createElement('li');
-  li.innerHTML = `<div class="cover"><img alt=""></div><div class="info"><div class="title"></div><div class="meta"></div><div class="bar indet"><i></i></div></div>`;
-  li.querySelector('.title').textContent = url;
+  li.innerHTML = `<label class="chk" title="Selecionar"><input type="checkbox" disabled><span></span></label>
+    <div class="cover"><img alt=""></div>
+    <div class="info"><div class="title"></div><div class="meta"></div><div class="bar indet"><i></i></div></div>
+    <div class="acts"><button class="x" title="Remover da lista">×</button></div>`;
+  li.querySelector('.title').textContent = title;
   setMeta(li, fmt, 'na fila…');
+  const box = li.querySelector('.chk input');
+  box.addEventListener('change', () => { li.classList.toggle('sel', box.checked); refreshBar(); });
+  li.querySelector('.x').addEventListener('click', () => removeItems([li]));
   list.prepend(li);
+  document.getElementById('empty').style.display = 'none';
+  refreshBar();
+  return li;
+}
+
+async function start(url) {
+  const fmt = outFormat();
+  const li = createItem(url, fmt);
   try {
     const r = await fetch('/api/download', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, quality: state.quality, format: fmt, res: state.res }) });
     const job = await r.json();
     if (!r.ok) return render(li, { status: 'erro', error: job.error, title: url, format: fmt });
+    li.dataset.id = job.id;
     poll(li, job.id, fmt);
   } catch { render(li, { status: 'erro', error: 'Servidor desligado? Abra o iniciar.bat.', title: url, format: fmt }); }
 }
 
 async function poll(li, id, fmt) {
+  if (!li.isConnected) return;
   try {
-    const job = await (await fetch('/api/jobs/' + id)).json();
+    const r = await fetch('/api/jobs/' + id);
+    if (r.status === 404) return;
+    const job = await r.json();
     job.format ??= fmt;
     render(li, job);
     if (!['pronto', 'erro'].includes(job.status)) setTimeout(() => poll(li, id, fmt), 700);
   } catch { setTimeout(() => poll(li, id, fmt), 1500); }
+}
+
+// ao abrir o app, a lista da última vez volta
+(async () => {
+  try {
+    const saved = await (await fetch('/api/jobs')).json();
+    saved.forEach(job => {
+      const li = createItem(job.title || job.url, job.format || 'mp3');
+      li.dataset.id = job.id;
+      render(li, job, true);
+      if (!['pronto', 'erro'].includes(job.status)) poll(li, job.id, job.format);
+    });
+  } catch {}
+})();
+
+// ---------- seleção e "Baixar tudo" ----------
+const toolbar = document.getElementById('toolbar'), selAll = document.getElementById('selAll');
+const dlAll = document.getElementById('dlAll'), rmSel = document.getElementById('rmSel'), countEl = document.getElementById('count');
+const items = () => [...list.children].filter(li => !li.classList.contains('out'));
+const readyItems = () => items().filter(li => li.dataset.status === 'pronto');
+const selectedItems = () => items().filter(li => li.querySelector('.chk input').checked);
+
+function refreshBar() {
+  const all = items(), ready = readyItems(), sel = selectedItems();
+  const selReady = sel.filter(li => li.dataset.status === 'pronto');
+  const working = all.filter(li => !['pronto', 'erro'].includes(li.dataset.status)).length;
+  const errors = all.filter(li => li.dataset.status === 'erro').length;
+  toolbar.hidden = all.length === 0;
+  list.classList.toggle('withbar', all.length > 0);
+  document.getElementById('empty').style.display = all.length ? 'none' : '';
+
+  const parts = [`<b>${ready.length}</b> pronto${ready.length === 1 ? '' : 's'}`];
+  if (working) parts.push(`<b>${working}</b> convertendo`);
+  if (errors) parts.push(`<b>${errors}</b> com erro`);
+  countEl.innerHTML = parts.join(' · ');
+
+  const target = selReady.length ? selReady : ready;
+  dlAll.disabled = target.length === 0;
+  dlAll.textContent = selReady.length && selReady.length < ready.length
+    ? `Baixar ${selReady.length} selecionado${selReady.length === 1 ? '' : 's'}`
+    : `Baixar tudo${ready.length ? ` (${ready.length})` : ''}`;
+
+  const selectable = all.filter(li => !li.querySelector('.chk input').disabled);
+  selAll.checked = selectable.length > 0 && sel.length === selectable.length;
+  selAll.indeterminate = sel.length > 0 && sel.length < selectable.length;
+  rmSel.hidden = sel.length === 0;
+  rmSel.textContent = `Remover (${sel.length})`;
+}
+
+selAll.addEventListener('change', () => {
+  items().forEach(li => {
+    const box = li.querySelector('.chk input');
+    if (!box.disabled) { box.checked = selAll.checked; li.classList.toggle('sel', box.checked); }
+  });
+  refreshBar();
+});
+
+dlAll.addEventListener('click', async () => {
+  const sel = selectedItems().filter(li => li.dataset.status === 'pronto');
+  const target = sel.length ? sel : readyItems();
+  const ids = target.map(li => li.dataset.id);
+  if (!ids.length) return;
+  if (APP_MODE) {
+    // janela do app: escolhe a pasta e copia tudo pra lá de uma vez
+    const folder = await window.pywebview?.api?.choose_folder();
+    if (!folder) return;
+    dlAll.classList.add('busy'); dlAll.textContent = 'Salvando…';
+    try {
+      const r = await fetch('/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, dest: folder }) });
+      const res = await r.json();
+      if (!r.ok) throw new Error(res.error);
+      markDownloaded(target);
+      toast(`${res.count} arquivo${res.count === 1 ? '' : 's'} salvo${res.count === 1 ? '' : 's'} em ${res.dest}`);
+    } catch (e) { toast('Não deu pra salvar: ' + e.message, true); }
+    dlAll.classList.remove('busy'); refreshBar();
+  } else {
+    // navegador: um arquivo baixa direto; vários vêm num .zip
+    const a = document.createElement('a');
+    a.href = ids.length === 1 ? '/api/file/' + ids[0] : '/api/zip?ids=' + ids.join(',');
+    a.download = ''; document.body.append(a); a.click(); a.remove();
+    markDownloaded(target);
+    toast(ids.length === 1 ? 'Baixando 1 arquivo' : `Baixando ${ids.length} arquivos num .zip`);
+    refreshBar();
+  }
+});
+
+rmSel.addEventListener('click', () => {
+  const sel = selectedItems();
+  if (sel.length > 1 && !confirm(`Remover ${sel.length} itens da lista? Os arquivos convertidos também são apagados da pasta downloads.`)) return;
+  removeItems(sel);
+});
+
+function removeItems(lis) {
+  lis.forEach(li => {
+    if (li.dataset.id) fetch('/api/jobs/' + li.dataset.id, { method: 'DELETE' });
+    li.classList.add('out');
+    setTimeout(() => { li.remove(); refreshBar(); }, 300);
+  });
+  refreshBar();
+}
+
+function markDownloaded(lis) {
+  lis.forEach(li => {
+    const box = li.querySelector('.chk input');
+    box.checked = false; li.classList.remove('sel');
+    if (!li.querySelector('.badge')) {
+      const b = document.createElement('span'); b.className = 'badge'; b.textContent = '✓ baixado';
+      li.querySelector('.title').append(b);
+    }
+  });
+}
+
+let toastTimer;
+function toast(msg, isErr = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.toggle('err', isErr); t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 4500);
 }
 
 function setMeta(li, fmt, text, cls = '') {
@@ -325,37 +530,63 @@ function setMeta(li, fmt, text, cls = '') {
   meta.append(tag, text);
 }
 
-function render(li, job) {
+function render(li, job, restored = false) {
   const fmt = job.format || 'mp3';
-  li.querySelector('.title').textContent = job.title || job.url;
+  const wasReady = li.dataset.status === 'pronto';
+  li.dataset.status = job.status;
+  const titleEl = li.querySelector('.title');
+  if (titleEl.firstChild?.nodeType === 3) titleEl.firstChild.textContent = job.title || job.url;
+  else titleEl.prepend(job.title || job.url);
   const img = li.querySelector('img');
   if (job.thumbnail && img.getAttribute('src') !== job.thumbnail) img.src = job.thumbnail;
   const bar = li.querySelector('.bar');
+  const box = li.querySelector('.chk input');
   if (job.status === 'pronto') {
     setMeta(li, fmt, `${job.uploader || ''} · ${fmtSize(job.size)}`);
     bar?.remove(); li.classList.add('done');
+    if (!wasReady) {
+      box.disabled = false;
+      // novos prontos já vêm marcados; os que voltaram da última vez e já foram baixados, não
+      box.checked = !(restored && job.downloaded);
+      li.classList.toggle('sel', box.checked);
+      if (job.downloaded) markDownloaded([li]);
+    }
     if (!li.querySelector('a.dl')) {
       const a = document.createElement('a');
-      a.className = 'dl';
+      a.className = 'dl small';
       if (APP_MODE) {
         // na janela do app o arquivo já está salvo: o botão mostra ele no Explorer
-        a.href = '#'; a.textContent = 'Abrir pasta';
+        a.href = '#'; a.textContent = 'Abrir'; a.title = 'Mostrar o arquivo na pasta downloads';
         a.addEventListener('click', e => { e.preventDefault(); reveal(job.id); });
       } else {
-        a.href = '/api/file/' + job.id; a.textContent = 'Baixar ' + fmt.toUpperCase();
+        a.href = '/api/file/' + job.id; a.textContent = 'Baixar'; a.title = 'Baixar só este';
+        a.addEventListener('click', () => markDownloaded([li]));
       }
-      li.append(a);
-      if (!APP_MODE) a.click();
+      li.querySelector('.acts').prepend(a);
     }
   } else if (job.status === 'erro') {
     setMeta(li, fmt, job.error || 'Erro', 'err');
     bar?.remove(); li.classList.add('fail');
+    if (li.dataset.id && !li.querySelector('.retry')) {
+      const a = document.createElement('a');
+      a.className = 'dl small retry'; a.href = '#'; a.textContent = 'Tentar de novo';
+      a.addEventListener('click', async e => {
+        e.preventDefault(); a.remove();
+        li.classList.remove('fail');
+        li.querySelector('.info').insertAdjacentHTML('beforeend', '<div class="bar indet"><i></i></div>');
+        render(li, { ...job, status: 'na fila', error: null, progress: 0 });
+        await fetch('/api/retry/' + li.dataset.id, { method: 'POST' });
+        poll(li, li.dataset.id, fmt);
+      });
+      li.querySelector('.acts').prepend(a);
+    }
   } else if (bar) {
     const downloading = job.status === 'baixando' && job.progress > 0;
     bar.classList.toggle('indet', !downloading);
     bar.querySelector('i').style.width = job.progress + '%';
     setMeta(li, fmt, job.status + (downloading ? ` · ${job.progress}%` : '…'));
   }
+  refreshBar();
 }
 </script>
 </body>

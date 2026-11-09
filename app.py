@@ -1,14 +1,17 @@
 """Lorota Converter — extrator de MP3/WAV pessoal, roda em http://127.0.0.1:5000"""
 import html
+import json
 import re
 import shutil
 import socket
+import time
 import urllib.request
 import subprocess
 import sys
 import threading
 import uuid
 import webbrowser
+import zipfile
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
@@ -36,12 +39,54 @@ VIDEO_FORMATS = {"mp4", "mov", "mkv", "webm", "avi"}
 
 app = Flask(__name__, static_folder=str(RES_DIR / "static"))
 jobs: dict[str, dict] = {}
-lock = threading.Lock()
+lock = threading.RLock()
+
+# Quantas conversões rodam ao mesmo tempo. Os outros links esperam "na fila" e
+# entram assim que abre vaga — dá pra colar quantos links quiser.
+MAX_PARALLEL = 3
+slots = threading.Semaphore(MAX_PARALLEL)
+START_GAP = 1.5  # segundos entre o início de cada download (muitos pedidos juntos o YouTube barra)
+_start_lock = threading.Lock()
+_last_start = [0.0]
+
+JOBS_FILE = DOWNLOADS / "lista.json"       # a lista sobrevive quando o app é fechado
+SETTINGS_FILE = DOWNLOADS / "config.json"  # última pasta escolhida em "Baixar"
+
+
+def read_json(path: Path, default):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return default
+
+
+def save_jobs():
+    """Grava os itens prontos para a lista voltar na próxima vez que abrir o app."""
+    with lock:
+        done = [j for j in jobs.values() if j.get("status") == "pronto"]
+    try:
+        JOBS_FILE.write_text(json.dumps(done, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def load_jobs():
+    for j in read_json(JOBS_FILE, []):
+        if j.get("file") and (DOWNLOADS / j["id"] / j["file"]).exists():
+            jobs[j["id"]] = j
+
+
+def job_path(job: dict) -> Path:
+    return DOWNLOADS / job["id"] / job["file"]
 
 
 def update(job_id, **kw):
     with lock:
+        if job_id not in jobs:  # removido da lista enquanto convertia
+            return
         jobs[job_id].update(kw)
+    if kw.get("status") == "pronto":
+        save_jobs()
 
 
 # ---------- Spotify ----------
@@ -106,7 +151,41 @@ def retag_mp3(path: Path, sp: dict):
     cover.unlink(missing_ok=True)
 
 
-def run_job(job_id: str, url: str, quality: str, fmt: str, res: str = "1080"):
+def friendly_error(msg: str) -> str:
+    low = msg.lower()
+    if "not a bot" in low or "429" in low or "too many requests" in low:
+        return "O YouTube pediu uma pausa (muitos pedidos seguidos). Espere um pouco e clique em Tentar de novo."
+    if "private video" in low:
+        return "Esse vídeo é privado."
+    if "video unavailable" in low or "not available" in low:
+        return "Esse conteúdo não está disponível (removido ou bloqueado na sua região)."
+    if "unsupported url" in low:
+        return "Esse site ou link não é suportado."
+    return msg
+
+
+def run_job(*args):
+    job_id = args[0]
+    with slots:  # espera vaga (no máximo MAX_PARALLEL ao mesmo tempo)
+        for attempt in range(3):
+            with _start_lock:  # espaça o início dos downloads
+                wait = _last_start[0] + START_GAP - time.time()
+                if wait > 0:
+                    time.sleep(wait)
+                _last_start[0] = time.time()
+            if job_id not in jobs:
+                return
+            _run_job(*args)
+            err = (jobs.get(job_id) or {}).get("error", "")
+            if jobs.get(job_id, {}).get("status") != "erro" or "pediu uma pausa" not in err or attempt == 2:
+                return
+            # YouTube barrou por excesso de pedidos: espera e tenta de novo sozinho
+            update(job_id, status=f"YouTube pediu pausa, tentando de novo em {10 * (attempt + 1)}s",
+                   error=None, progress=0)
+            time.sleep(10 * (attempt + 1))
+
+
+def _run_job(job_id: str, url: str, quality: str, fmt: str, res: str = "1080"):
     job_dir = DOWNLOADS / job_id
     job_dir.mkdir(exist_ok=True)
 
@@ -204,8 +283,8 @@ def run_job(job_id: str, url: str, quality: str, fmt: str, res: str = "1080"):
             format=fmt,
         )
     except Exception as e:  # noqa: BLE001
-        msg = str(e).replace("\x1b[0;31m", "").replace("\x1b[0m", "")
-        update(job_id, status="erro", error=msg)
+        msg = str(e).replace("\x1b[0;31m", "").replace("\x1b[0m", "").replace("ERROR: ", "")
+        update(job_id, status="erro", error=friendly_error(msg))
 
 
 @app.get("/")
@@ -228,9 +307,29 @@ def start_download():
         return jsonify(error="Cole um link válido (http/https)."), 400
     job_id = uuid.uuid4().hex[:10]
     with lock:
-        jobs[job_id] = {"id": job_id, "url": url, "status": "na fila", "progress": 0, "title": url}
+        jobs[job_id] = {"id": job_id, "url": url, "status": "na fila", "progress": 0, "title": url,
+                        "format": fmt, "quality": quality, "res": res, "created": time.time(), "downloaded": False}
     threading.Thread(target=run_job, args=(job_id, url, quality, fmt, res), daemon=True).start()
     return jsonify(jobs[job_id])
+
+
+@app.post("/api/retry/<job_id>")
+def retry_job(job_id):
+    with lock:
+        job = jobs.get(job_id)
+        if not job or job.get("status") != "erro":
+            return jsonify(error="Nada pra tentar de novo."), 400
+        job.update(status="na fila", error=None, progress=0)
+    shutil.rmtree(DOWNLOADS / job_id, ignore_errors=True)
+    args = (job_id, job["url"], job.get("quality", "320"), job.get("format", "mp3"), job.get("res", "1080"))
+    threading.Thread(target=run_job, args=args, daemon=True).start()
+    return jsonify(job)
+
+
+@app.get("/api/jobs")
+def list_jobs():
+    with lock:
+        return jsonify(sorted(jobs.values(), key=lambda j: j.get("created", 0)))
 
 
 @app.get("/api/jobs/<job_id>")
@@ -240,13 +339,83 @@ def job_status(job_id):
     return (jsonify(job), 200) if job else (jsonify(error="não encontrado"), 404)
 
 
+@app.delete("/api/jobs/<job_id>")
+def delete_job(job_id):
+    """Tira o item da lista e apaga o arquivo convertido."""
+    with lock:
+        job = jobs.pop(job_id, None)
+    if job:
+        shutil.rmtree(DOWNLOADS / job_id, ignore_errors=True)
+        save_jobs()
+    return jsonify(ok=True)
+
+
+def ready_jobs(ids) -> list[dict]:
+    with lock:
+        return [jobs[i] for i in ids if i in jobs and jobs[i].get("status") == "pronto" and job_path(jobs[i]).exists()]
+
+
+def unique_name(name: str, used: set, folder: Path | None = None) -> str:
+    """Evita sobrescrever: "Música.mp3" -> "Música (2).mp3"."""
+    stem, ext = os.path.splitext(name)
+    n, cand = 1, name
+    while cand.lower() in used or (folder and (folder / cand).exists()):
+        n += 1
+        cand = f"{stem} ({n}){ext}"
+    used.add(cand.lower())
+    return cand
+
+
+def mark_downloaded(items):
+    with lock:
+        for j in items:
+            j["downloaded"] = True
+    save_jobs()
+
+
+@app.post("/api/export")
+def export_files():
+    """Janela do app: copia os arquivos escolhidos para uma pasta de uma vez só."""
+    data = request.get_json(force=True)
+    dest = Path(data.get("dest") or "")
+    items = ready_jobs(data.get("ids") or [])
+    if not items:
+        return jsonify(error="Nenhum arquivo pronto selecionado."), 400
+    if not dest.is_dir():
+        return jsonify(error="Pasta de destino não encontrada."), 400
+    used: set = set()
+    for j in items:
+        shutil.copy2(job_path(j), dest / unique_name(j["file"], used, dest))
+    mark_downloaded(items)
+    subprocess.Popen(["explorer", str(dest)])
+    return jsonify(ok=True, count=len(items), dest=str(dest))
+
+
+@app.get("/api/zip")
+def zip_files():
+    """Modo navegador: entrega os arquivos escolhidos num .zip só."""
+    items = ready_jobs((request.args.get("ids") or "").split(","))
+    if not items:
+        return jsonify(error="Nenhum arquivo pronto selecionado."), 400
+    zdir = DOWNLOADS / "_zips"
+    shutil.rmtree(zdir, ignore_errors=True)  # limpa zips de vezes anteriores
+    zdir.mkdir()
+    zpath = zdir / f"Lorota-{time.strftime('%Y-%m-%d_%H-%M')}.zip"
+    used: set = set()
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_STORED) as z:  # áudio/vídeo já é comprimido
+        for j in items:
+            z.write(job_path(j), unique_name(j["file"], used))
+    mark_downloaded(items)
+    return send_file(zpath, as_attachment=True, download_name=zpath.name)
+
+
 @app.get("/api/file/<job_id>")
 def get_file(job_id):
     job = jobs.get(job_id)
     if not job or job.get("status") != "pronto":
         return jsonify(error="Arquivo não disponível"), 404
-    path = DOWNLOADS / job_id / job["file"]
-    return send_file(path, as_attachment=True, download_name=job["file"])
+    mark_downloaded([job])
+    return send_file(job_path(job), as_attachment=True, download_name=job["file"])
 
 
 @app.post("/api/reveal/<job_id>")
@@ -278,6 +447,32 @@ def run_browser():
     app.run(host="127.0.0.1", port=port, debug=False)
 
 
+class WindowApi:
+    """Funções que a página chama dentro da janela do app (window.pywebview.api)."""
+
+    def __init__(self):
+        self.window = None
+
+    def choose_folder(self):
+        import webview
+
+        settings = read_json(SETTINGS_FILE, {})
+        start = settings.get("last_folder")
+        if not start or not Path(start).is_dir():
+            start = str(Path.home() / "Downloads")
+        folder_dialog = getattr(getattr(webview, "FileDialog", None), "FOLDER", None) or webview.FOLDER_DIALOG
+        result = self.window.create_file_dialog(folder_dialog, directory=start)
+        if not result:
+            return None
+        folder = result[0] if isinstance(result, (list, tuple)) else result
+        settings["last_folder"] = folder
+        try:
+            SETTINGS_FILE.write_text(json.dumps(settings, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+        return folder
+
+
 def run_window():
     import webview  # pywebview: janela nativa usando o Edge WebView2 do Windows
 
@@ -286,16 +481,20 @@ def run_window():
         target=lambda: app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False),
         daemon=True,
     ).start()
-    webview.create_window(
+    api = WindowApi()
+    api.window = webview.create_window(
         "Lorota Converter",
         f"http://127.0.0.1:{port}/?app=1",
+        js_api=api,
         width=920,
-        height=820,
+        height=860,
         min_size=(420, 600),
         background_color="#0d0716",
     )
     webview.start()  # bloqueia até fechar a janela; aí o programa encerra
 
+
+load_jobs()
 
 if __name__ == "__main__":
     run_browser() if BROWSER_MODE else run_window()

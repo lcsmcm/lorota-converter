@@ -23,7 +23,11 @@
 - **Vídeo** em **MP4, MOV, MKV, WEBM ou AVI**, com resolução **Máx, 1080p, 720p ou 480p**.
   - Dá preferência a H.264 + AAC, que abrem em qualquer player. MP4, MOV e MKV saem sem recodificar, então não perdem qualidade.
 - **Links do Spotify**: o áudio do Spotify é protegido, então o app lê o nome, o artista, o álbum e a capa da página pública da música, acha a mesma faixa no YouTube e grava os dados e a capa do Spotify no MP3. Por enquanto funciona com links de música (`/track/`).
-- **Vários links de uma vez**: cole uma lista e o app converte tudo em paralelo.
+- **Lista de links + "Baixar tudo"**: cada link começa a converter assim que é colado, até 3 ao mesmo tempo, e os demais esperam a vez. No fim, dá para **baixar tudo** ou **só os selecionados** de uma vez:
+  - na janela do app, você escolhe uma pasta e os arquivos são copiados para lá;
+  - no navegador, vem tudo num `.zip`.
+  - A lista fica salva entre uma abertura e outra, e os itens já baixados ganham a marca "✓ baixado".
+  - Se o YouTube barrar por excesso de pedidos, o app espera e tenta de novo sozinho. Também há um botão **Tentar de novo** em cada item com erro.
 - **Fonte de maior qualidade**: sempre escolhe a faixa de áudio de maior bitrate disponível.
 - **Janela nativa**: não abre o navegador. Usa o WebView2 que já vem no Windows 10/11.
 - **Executável portátil**: um `.exe` que roda em qualquer PC Windows, sem instalar Python.
