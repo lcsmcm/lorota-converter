@@ -111,8 +111,19 @@
 
   .hint { color: var(--muted); font-size: 13px; margin: 14px 4px 0; }
   .hint b { color: var(--text); font-weight: 600; }
-  .hint a.dir { color: var(--orange); font-weight: 600; text-decoration: none; border-bottom: 1px dashed currentColor; }
-  .hint a.dir:hover { color: var(--lime); }
+  .savebar { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 8px 8px 8px 14px; border-radius: 14px;
+    background: rgba(0, 0, 0, .25); border: 1px solid var(--line); font-size: 13px; }
+  .savelbl { color: var(--muted); font-weight: 600; flex: none; }
+  .savepath { flex: 1; min-width: 0; color: var(--orange); font-weight: 600; text-decoration: none; direction: rtl; text-align: left;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .savepath:hover { color: var(--lime); }
+  .chg { flex: none; font: inherit; font-size: 13px; font-weight: 700; color: var(--text); background: rgba(255, 255, 255, .08);
+    border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; cursor: pointer; transition: background .2s, border-color .2s; }
+  .chg:hover { background: rgba(255, 255, 255, .16); border-color: var(--orange); }
+  .chg.reset { color: var(--muted); }
+  .chg[hidden] { display: none; }
+  .savebar.flash { animation: flash 1s ease-out; }
+  @keyframes flash { 0% { border-color: var(--lime); box-shadow: 0 0 0 4px rgba(184, 255, 92, .25); } }
 
   /* ---------- lista ---------- */
   ul { list-style: none; padding: 0; margin: 26px 0 0; display: grid; gap: 12px; }
@@ -273,7 +284,13 @@
         <button type="button" data-v="128">128 kbps</button>
       </div>
     </div>
-    <p class="hint">Vai colando links: cada um <b>já começa a converter</b> na hora. No fim, é só <b>Baixar tudo</b> ou escolher quais quer. Os convertidos ficam guardados na pasta <a href="#" id="openDir" class="dir">📂 downloads</a>.</p>
+    <div class="savebar">
+      <span class="savelbl">📂 Salvar em</span>
+      <a href="#" id="openDir" class="savepath" title="Abrir a pasta">…</a>
+      <button type="button" class="chg" id="chgDir">Trocar pasta</button>
+      <button type="button" class="chg reset" id="resetDir" hidden title="Voltar para a pasta downloads do app">Padrão</button>
+    </div>
+    <p class="hint">Vai colando links: cada um <b>já começa a converter</b> e cai direto na pasta acima. No fim, dá pra <b>Baixar tudo</b> (ou só os escolhidos) e mandar uma cópia pra outro lugar.</p>
   </section>
 
   <div class="toolbar" id="toolbar" hidden>
@@ -343,8 +360,38 @@ const outFormat = () => state.format === 'video' ? state.container : state.forma
 
 const APP_MODE = new URLSearchParams(location.search).has('app');
 const reveal = id => fetch('/api/reveal/' + (id || 'pasta'), { method: 'POST' });
-document.getElementById('openDir').addEventListener('click', e => { e.preventDefault(); reveal(); });
-if (!APP_MODE) document.getElementById('openDir').outerHTML = '<b>downloads</b>';
+// ---------- pasta onde os arquivos prontos são salvos ----------
+const openDir = document.getElementById('openDir'), chgDir = document.getElementById('chgDir'), resetDir = document.getElementById('resetDir');
+let saveFolder = '';
+function showFolder(s) {
+  saveFolder = s.save_folder;
+  // "\u200e" mantém o caminho legível com direction:rtl (corta o começo, mostra o fim)
+  openDir.textContent = '\u200e' + s.save_folder + '\u200e';
+  openDir.title = s.save_folder + ' (clique para abrir)';
+  resetDir.hidden = s.is_default;
+}
+async function setFolder(body) {
+  const r = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const s = await r.json();
+  if (!r.ok) return toast(s.error || 'Não deu pra trocar a pasta.', true);
+  showFolder(s);
+  const bar = document.querySelector('.savebar');
+  bar.classList.remove('flash'); bar.offsetWidth; bar.classList.add('flash');
+  toast(s.is_default ? 'Voltou a salvar na pasta downloads do app' : 'Os próximos arquivos vão para ' + s.save_folder);
+}
+fetch('/api/settings').then(r => r.json()).then(showFolder).catch(() => {});
+openDir.addEventListener('click', e => { e.preventDefault(); reveal(); });
+chgDir.addEventListener('click', async () => {
+  if (APP_MODE && window.pywebview?.api?.choose_folder) {
+    const folder = await window.pywebview.api.choose_folder(saveFolder);
+    if (folder) setFolder({ save_folder: folder });
+  } else {
+    // modo navegador: não dá pra abrir a janela de pastas, então digita o caminho
+    const folder = prompt('Cole o caminho da pasta onde salvar (ex.: C:\\Users\\Você\\Music):', saveFolder);
+    if (folder) setFolder({ save_folder: folder.trim().replace(/^"|"$/g, '') });
+  }
+});
+resetDir.addEventListener('click', () => setFolder({ reset: true }));
 
 const list = document.getElementById('list');
 const fmtSize = b => (b / 1048576).toFixed(1) + ' MB';
@@ -491,7 +538,7 @@ dlAll.addEventListener('click', async () => {
 
 rmSel.addEventListener('click', () => {
   const sel = selectedItems();
-  if (sel.length > 1 && !confirm(`Remover ${sel.length} itens da lista? Os arquivos convertidos também são apagados da pasta downloads.`)) return;
+  if (sel.length > 1 && !confirm(`Tirar ${sel.length} itens da lista? Os arquivos continuam salvos na pasta.`)) return;
   removeItems(sel);
 });
 

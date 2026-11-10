@@ -72,12 +72,34 @@ def save_jobs():
 
 def load_jobs():
     for j in read_json(JOBS_FILE, []):
-        if j.get("file") and (DOWNLOADS / j["id"] / j["file"]).exists():
+        if j.get("file") and job_path(j).exists():
             jobs[j["id"]] = j
 
 
 def job_path(job: dict) -> Path:
-    return DOWNLOADS / job["id"] / job["file"]
+    # arquivos novos guardam o caminho completo (ficam na pasta escolhida pelo usuário);
+    # os antigos ficavam em downloads/<id>/
+    return Path(job["path"]) if job.get("path") else DOWNLOADS / job["id"] / job["file"]
+
+
+# ---------- pasta onde os arquivos prontos são salvos ----------
+def load_settings() -> dict:
+    return read_json(SETTINGS_FILE, {})
+
+
+def save_settings(settings: dict):
+    try:
+        SETTINGS_FILE.write_text(json.dumps(settings, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def save_dir() -> Path:
+    """Pasta escolhida pelo usuário; se não existir mais (ex.: pendrive tirado), volta pra downloads."""
+    folder = load_settings().get("save_folder")
+    if folder and Path(folder).is_dir():
+        return Path(folder)
+    return DOWNLOADS
 
 
 def update(job_id, **kw):
@@ -271,15 +293,21 @@ def _run_job(job_id: str, url: str, quality: str, fmt: str, res: str = "1080"):
         if sp and fmt == "mp3":
             update(job_id, status="colocando capa do Spotify")
             retag_mp3(mp3s[0], sp)
+        # move o arquivo pronto pra pasta escolhida (sem sobrescrever nada que já esteja lá)
+        dest_dir = save_dir()
+        dest = dest_dir / unique_name(mp3s[0].name, set(), dest_dir)
+        shutil.move(str(mp3s[0]), dest)
+        shutil.rmtree(job_dir, ignore_errors=True)
         update(
             job_id,
             status="pronto",
             progress=100,
-            file=mp3s[0].name,
+            file=dest.name,
+            path=str(dest),
             title=sp["title"] if sp else (info.get("title") or mp3s[0].stem),
             uploader=f"{sp['artist']} · via Spotify" if sp else (info.get("uploader") or info.get("extractor_key")),
             thumbnail=sp["cover"] if sp else info.get("thumbnail"),
-            size=mp3s[0].stat().st_size,
+            size=dest.stat().st_size,
             format=fmt,
         )
     except Exception as e:  # noqa: BLE001
@@ -341,13 +369,34 @@ def job_status(job_id):
 
 @app.delete("/api/jobs/<job_id>")
 def delete_job(job_id):
-    """Tira o item da lista e apaga o arquivo convertido."""
+    """Tira o item da lista. O arquivo pronto continua na pasta (só some o temporário)."""
     with lock:
         job = jobs.pop(job_id, None)
     if job:
         shutil.rmtree(DOWNLOADS / job_id, ignore_errors=True)
         save_jobs()
     return jsonify(ok=True)
+
+
+@app.get("/api/settings")
+def get_settings():
+    folder = save_dir()
+    return jsonify(save_folder=str(folder), is_default=(folder == DOWNLOADS))
+
+
+@app.post("/api/settings")
+def set_settings():
+    data = request.get_json(force=True)
+    settings = load_settings()
+    if data.get("reset"):
+        settings.pop("save_folder", None)
+    else:
+        folder = Path(data.get("save_folder") or "")
+        if not folder.is_dir():
+            return jsonify(error="Pasta não encontrada."), 400
+        settings["save_folder"] = str(folder)
+    save_settings(settings)
+    return get_settings()
 
 
 def ready_jobs(ids) -> list[dict]:
@@ -420,12 +469,12 @@ def get_file(job_id):
 
 @app.post("/api/reveal/<job_id>")
 def reveal(job_id):
-    """Abre o Explorer com o arquivo selecionado (ou a pasta downloads)."""
+    """Abre o Explorer com o arquivo selecionado (ou a pasta onde os arquivos são salvos)."""
     job = jobs.get(job_id)
-    if job and job.get("status") == "pronto":
-        subprocess.Popen(["explorer", "/select,", str(DOWNLOADS / job_id / job["file"])])
+    if job and job.get("status") == "pronto" and job_path(job).exists():
+        subprocess.Popen(["explorer", "/select,", str(job_path(job))])
     else:
-        subprocess.Popen(["explorer", str(DOWNLOADS)])
+        subprocess.Popen(["explorer", str(save_dir())])
     return jsonify(ok=True)
 
 
@@ -453,11 +502,12 @@ class WindowApi:
     def __init__(self):
         self.window = None
 
-    def choose_folder(self):
+    def choose_folder(self, start=None):
+        """Abre a janela do Windows pra escolher uma pasta. Devolve o caminho ou None."""
         import webview
 
-        settings = read_json(SETTINGS_FILE, {})
-        start = settings.get("last_folder")
+        settings = load_settings()
+        start = start or settings.get("last_folder")
         if not start or not Path(start).is_dir():
             start = str(Path.home() / "Downloads")
         folder_dialog = getattr(getattr(webview, "FileDialog", None), "FOLDER", None) or webview.FOLDER_DIALOG
@@ -465,11 +515,9 @@ class WindowApi:
         if not result:
             return None
         folder = result[0] if isinstance(result, (list, tuple)) else result
+        settings = load_settings()
         settings["last_folder"] = folder
-        try:
-            SETTINGS_FILE.write_text(json.dumps(settings, ensure_ascii=False), encoding="utf-8")
-        except OSError:
-            pass
+        save_settings(settings)
         return folder
 
 

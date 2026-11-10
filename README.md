@@ -22,6 +22,7 @@
 - **Áudio WAV 24-bit**: sem compressão e na taxa de amostragem original da fonte, sem reamostrar.
 - **Vídeo** em **MP4, MOV, MKV, WEBM ou AVI**, com resolução **Máx, 1080p, 720p ou 480p**.
   - Dá preferência a H.264 + AAC, que abrem em qualquer player. MP4, MOV e MKV saem sem recodificar, então não perdem qualidade.
+- **Você escolhe onde salvar**: em "📂 Salvar em", clique em **Trocar pasta** e os arquivos prontos vão direto para lá, sem sobrescrever nada que já exista. O botão **Padrão** volta para a pasta `downloads` do app.
 - **Links do Spotify**: o áudio do Spotify é protegido, então o app lê o nome, o artista, o álbum e a capa da página pública da música, acha a mesma faixa no YouTube e grava os dados e a capa do Spotify no MP3. Por enquanto funciona com links de música (`/track/`).
 - **Lista de links + "Baixar tudo"**: cada link começa a converter assim que é colado, até 3 ao mesmo tempo, e os demais esperam a vez. No fim, dá para **baixar tudo** ou **só os selecionados** de uma vez:
   - na janela do app, você escolhe uma pasta e os arquivos são copiados para lá;
