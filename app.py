@@ -521,9 +521,61 @@ class WindowApi:
         return folder
 
 
+APP_ID = "LorotaCorp.LorotaConverter"
+ICON_FILE = RES_DIR / "docs" / "icon.ico"
+
+
+def set_taskbar_identity():
+    """Faz o Windows tratar o app como "Lorota Converter", e não como Python, na barra de tarefas."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def set_window_icon(title: str):
+    """Troca o ícone da janela (barra de tarefas e Alt+Tab) pelo do Lorota."""
+    if sys.platform != "win32" or not ICON_FILE.exists():
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    user32.LoadImageW.restype = wintypes.HANDLE
+    user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    user32.SendMessageW.restype = wintypes.LPARAM
+    IMAGE_ICON, LR_LOADFROMFILE, WM_SETICON, ICON_SMALL, ICON_BIG = 1, 0x10, 0x80, 0, 1
+
+    # acha a janela deste processo pelo título
+    pid, found = os.getpid(), []
+    EnumProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def check(hwnd, _):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid and user32.IsWindowVisible(hwnd):
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(hwnd, buf, 256)
+            if buf.value == title:
+                found.append(hwnd)
+        return True
+
+    user32.EnumWindows(EnumProc(check), 0)
+    for hwnd in found:
+        for size, kind in ((16, ICON_SMALL), (32, ICON_BIG)):
+            hicon = user32.LoadImageW(None, str(ICON_FILE), IMAGE_ICON, size, size, LR_LOADFROMFILE)
+            if hicon:
+                user32.SendMessageW(hwnd, WM_SETICON, kind, hicon)
+    return found
+
+
 def run_window():
     import webview  # pywebview: janela nativa usando o Edge WebView2 do Windows
 
+    set_taskbar_identity()
     port = free_port()
     threading.Thread(
         target=lambda: app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False),
@@ -539,6 +591,7 @@ def run_window():
         min_size=(420, 600),
         background_color="#0d0716",
     )
+    api.window.events.shown += lambda: set_window_icon("Lorota Converter")
     webview.start()  # bloqueia até fechar a janela; aí o programa encerra
 
 
