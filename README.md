@@ -64,6 +64,8 @@ iniciar.bat
 O `iniciar.bat` cria o ambiente virtual, instala e atualiza as dependências e abre a janela do app.
 Para usar no navegador, rode `iniciar.bat --browser`.
 
+**Atalho na Área de Trabalho:** rode `criar-atalho.bat` uma vez. Ele cria o atalho "Lorota Converter" com o ícone do app. O atalho abre o app pelo Python, que é assinado digitalmente, então funciona mesmo quando o **Controle Inteligente de Aplicativos** do Windows bloqueia o `.exe`.
+
 ## Gerando o executável
 
 ```bash
