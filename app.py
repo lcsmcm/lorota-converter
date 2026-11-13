@@ -14,8 +14,21 @@ import webbrowser
 import zipfile
 from pathlib import Path
 
+import logging
+
 from flask import Flask, jsonify, request, send_file, send_from_directory
-import yt_dlp
+
+# o yt-dlp é pesado de carregar (~1s); só é importado na primeira conversão
+yt_dlp = None
+
+
+def get_ytdlp():
+    global yt_dlp
+    if yt_dlp is None:
+        import yt_dlp as _y
+        yt_dlp = _y
+    return yt_dlp
+
 
 # Sem janela de console (.exe ou pythonw) não existe stdout/stderr — evita erro nos prints do Flask
 import os
@@ -38,6 +51,7 @@ FFMPEG = str(APP_DIR / "ffmpeg.exe") if (APP_DIR / "ffmpeg.exe").exists() else s
 VIDEO_FORMATS = {"mp4", "mov", "mkv", "webm", "avi"}
 
 app = Flask(__name__, static_folder=str(RES_DIR / "static"))
+logging.getLogger("werkzeug").setLevel(logging.ERROR)  # não registra cada pedido da página (menos trabalho à toa)
 jobs: dict[str, dict] = {}
 lock = threading.RLock()
 
@@ -60,20 +74,34 @@ def read_json(path: Path, default):
         return default
 
 
+# Itens cujo arquivo não foi achado ao abrir (ex.: HD externo/pendrive desconectado, pasta
+# movida). Não aparecem na lista, mas continuam guardados no lista.json e voltam
+# sozinhos quando o arquivo estiver no lugar de novo.
+missing_jobs: list[dict] = []
+
+
 def save_jobs():
     """Grava os itens prontos para a lista voltar na próxima vez que abrir o app."""
     with lock:
         done = [j for j in jobs.values() if j.get("status") == "pronto"]
+        keep = done + [j for j in missing_jobs if j["id"] not in jobs]
+    tmp = JOBS_FILE.with_suffix(".tmp")
     try:
-        JOBS_FILE.write_text(json.dumps(done, ensure_ascii=False, indent=1), encoding="utf-8")
+        # grava num arquivo temporário e troca: se o PC desligar no meio, a lista não corrompe
+        tmp.write_text(json.dumps(keep, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.replace(JOBS_FILE)
     except OSError:
         pass
 
 
 def load_jobs():
     for j in read_json(JOBS_FILE, []):
-        if j.get("file") and job_path(j).exists():
+        if not j.get("file") or not j.get("id"):
+            continue
+        if job_path(j).exists():
             jobs[j["id"]] = j
+        else:
+            missing_jobs.append(j)
 
 
 def job_path(job: dict) -> Path:
@@ -283,7 +311,7 @@ def _run_job(job_id: str, url: str, quality: str, fmt: str, res: str = "1080"):
         opts["ffmpeg_location"] = str(Path(FFMPEG).parent)
 
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        with get_ytdlp().YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
         if info.get("entries"):  # resultado de busca (Spotify)
             info = info["entries"][0] or {}
@@ -372,6 +400,7 @@ def delete_job(job_id):
     """Tira o item da lista. O arquivo pronto continua na pasta (só some o temporário)."""
     with lock:
         job = jobs.pop(job_id, None)
+        missing_jobs[:] = [j for j in missing_jobs if j["id"] != job_id]
     if job:
         shutil.rmtree(DOWNLOADS / job_id, ignore_errors=True)
         save_jobs()
@@ -497,10 +526,15 @@ def run_browser():
 
 
 class WindowApi:
-    """Funções que a página chama dentro da janela do app (window.pywebview.api)."""
+    """Funções que a página chama dentro da janela do app (window.pywebview.api).
+
+    IMPORTANTE: tudo que for público aqui o pywebview varre ao abrir a janela. A janela
+    fica em `_window` (com _) — se ficasse pública, ele entraria no objeto nativo do
+    Windows e ficaria varrendo sem fim, travando o app na abertura.
+    """
 
     def __init__(self):
-        self.window = None
+        self._window = None
 
     def choose_folder(self, start=None):
         """Abre a janela do Windows pra escolher uma pasta. Devolve o caminho ou None."""
@@ -511,7 +545,7 @@ class WindowApi:
         if not start or not Path(start).is_dir():
             start = str(Path.home() / "Downloads")
         folder_dialog = getattr(getattr(webview, "FileDialog", None), "FOLDER", None) or webview.FOLDER_DIALOG
-        result = self.window.create_file_dialog(folder_dialog, directory=start)
+        result = self._window.create_file_dialog(folder_dialog, directory=start)
         if not result:
             return None
         folder = result[0] if isinstance(result, (list, tuple)) else result
@@ -582,7 +616,7 @@ def run_window():
         daemon=True,
     ).start()
     api = WindowApi()
-    api.window = webview.create_window(
+    window = api._window = webview.create_window(
         "Lorota Converter",
         f"http://127.0.0.1:{port}/?app=1",
         js_api=api,
@@ -591,7 +625,10 @@ def run_window():
         min_size=(420, 600),
         background_color="#0d0716",
     )
-    api.window.events.shown += lambda: set_window_icon("Lorota Converter")
+    def on_shown():
+        set_window_icon("Lorota Converter")  # sem retornar nada: o pywebview não aceita lista aqui
+
+    window.events.shown += on_shown
     webview.start()  # bloqueia até fechar a janela; aí o programa encerra
 
 
